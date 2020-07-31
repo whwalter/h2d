@@ -1,17 +1,17 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"strings"
 	"encoding/json"
 	"errors"
+	"fmt"
 	log "github.com/sirupsen/logrus"
+	"os"
+	"strings"
 
-	"github.com/spf13/cobra"
-	"k8s.io/client-go/kubernetes"
 	utils "github.com/maorfr/helm-plugin-utils/pkg"
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 var clientset kubernetes.Interface
@@ -19,16 +19,16 @@ var clientset kubernetes.Interface
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	log.SetOutput(os.Stdout)
-	if err :=  newCommand().Execute(); err != nil {
+	if err := newCommand().Execute(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func newCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "helm2culler",
+		Use:   "helm2culler",
 		Short: "Remove tiller if there are no v2 releases in a namespace.",
-		RunE: detectorRunE,
+		RunE:  detectorRunE,
 	}
 
 	if clientset == nil {
@@ -43,7 +43,6 @@ func newCommand() *cobra.Command {
 }
 
 func detectorRunE(cmd *cobra.Command, args []string) error {
-
 
 	label, err := cmd.Flags().GetString("label-selector")
 	if err != nil {
@@ -71,14 +70,14 @@ func detectorRunE(cmd *cobra.Command, args []string) error {
 	if (deleteTillerSA && (tillerSA == "")) || (!deleteTillerSA && (tillerSA != "")) {
 		return errors.New("remove-service-accounts and service-account requried to remove service accounts")
 	}
-	
+
 	return processNamespaces(clientset, label, tillerSA, deleteTiller, deleteTillerSA)
 }
 
 func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTiller, deleteTillerSA bool) error {
 
 	//Get namespaces that have a tiller in them
-	opts := metav1.ListOptions{ LabelSelector: label}
+	opts := metav1.ListOptions{LabelSelector: label}
 	tillerDeployments, err := clientset.AppsV1().Deployments("").List(opts)
 	if err != nil {
 		return err
@@ -100,8 +99,8 @@ func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTi
 		}
 		if len(releases) > 0 {
 			log.WithFields(log.Fields{
-			"namespace": namespace,
-			"releases": releases,
+				"namespace": namespace,
+				"releases":  releases,
 			}).Info("Helm2 releases detected")
 		} else {
 			removalNamespaces = append(removalNamespaces, namespace)
@@ -109,10 +108,10 @@ func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTi
 	}
 
 	//If a namespace has no configMap backed releases and a tiller, remove tiller
-	for _, ns:= range removalNamespaces {
+	for _, ns := range removalNamespaces {
 		nsLogger := log.WithFields(log.Fields{
 			"namespace": ns,
-			})
+		})
 
 		if !deleteTiller {
 			nsLogger.Info("DRYRUN: Delete tiller has been disabled")
@@ -142,7 +141,7 @@ func getTillerReleases(namespace string) ([]string, error) {
 		return []string{}, err
 	}
 	if releases != "" {
-		releaseList = strings.Split(releases, ",")	
+		releaseList = strings.Split(releases, ",")
 	} else {
 		releaseList = []string{}
 	}
@@ -154,10 +153,10 @@ func removeTiller(namespace, label, tillerSA string, deleteTillerSA bool) error 
 
 	nsLogger := log.WithFields(log.Fields{
 		"namespace": namespace,
-		})
+	})
 
 	var errs []error
-	opts := metav1.ListOptions{ LabelSelector: label}
+	opts := metav1.ListOptions{LabelSelector: label}
 	appsv1 := clientset.AppsV1()
 	corev1 := clientset.CoreV1()
 
@@ -170,7 +169,6 @@ func removeTiller(namespace, label, tillerSA string, deleteTillerSA bool) error 
 	if err != nil {
 		errs = append(errs, err)
 	}
-
 
 	for _, tiller := range tillerDeployments.Items {
 		nsLogger.Info(fmt.Sprintf("Found tiller deployment. Deleting tiller deployment %s\n", tiller.ObjectMeta.Name))
