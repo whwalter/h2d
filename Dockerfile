@@ -21,4 +21,4 @@ RUN apt-get update && apt-get install -y ca-certificates
 ARG NAME
 WORKDIR /app
 COPY --from=build-env /go/src/bin/${NAME} /app
-ENTRYPOINT ["./detector", "run"]
+ENTRYPOINT ["./detector"]
