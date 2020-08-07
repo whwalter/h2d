@@ -1,4 +1,4 @@
-module thing
+module h2d
 
 go 1.13
 

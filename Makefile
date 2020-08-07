@@ -1,5 +1,5 @@
 #Makefile helm2detector - Deteting tillers and helm 2 releases
-NAME=detector
+NAME=h2d
 
 default: build
 

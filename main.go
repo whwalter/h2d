@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"os"
+	"runtime/pprof"
 	"strings"
 
 	utils "github.com/maorfr/helm-plugin-utils/pkg"
@@ -26,7 +27,7 @@ func main() {
 
 func newCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "helm2culler",
+		Use:   "h2d",
 		Short: "Remove tiller if there are no v2 releases in a namespace.",
 		RunE:  detectorRunE,
 	}
@@ -35,14 +36,19 @@ func newCommand() *cobra.Command {
 		clientset = utils.GetClientSet()
 	}
 
-	cmd.PersistentFlags().Bool("remove-tiller", false, "remove tiller from empty namespaces")
-	cmd.PersistentFlags().Bool("remove-service-account", false, "remove tiller serviceaccount from empty namespaces")
+	cmd.PersistentFlags().String("memprofile", "", "(false) add memory profile")
+	cmd.PersistentFlags().Bool("remove-tiller", false, "(false) remove tiller from empty namespaces")
+	cmd.PersistentFlags().Bool("remove-service-account", false, "(false) remove tiller serviceaccount from empty namespaces")
 	cmd.PersistentFlags().String("service-account", "", "tiller serviceaccount name, required for serviceaccount removal")
 	cmd.PersistentFlags().String("label-selector", "name=tiller,app=helm", "tiller labels")
 	return cmd
 }
 
 func detectorRunE(cmd *cobra.Command, args []string) error {
+	profile, err := cmd.Flags().GetString("memprofile")
+	if err != nil {
+		return err
+	}
 
 	label, err := cmd.Flags().GetString("label-selector")
 	if err != nil {
@@ -68,13 +74,13 @@ func detectorRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if (deleteTillerSA && (tillerSA == "")) || (!deleteTillerSA && (tillerSA != "")) {
-		return errors.New("remove-service-accounts and service-account requried to remove service accounts")
+		return errors.New("both remove-service-accounts and service-account need to be specified in order to remove Tiller service accounts")
 	}
 
-	return processNamespaces(clientset, label, tillerSA, deleteTiller, deleteTillerSA)
+	return processNamespaces(clientset, label, tillerSA, profile, deleteTiller, deleteTillerSA)
 }
 
-func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTiller, deleteTillerSA bool) error {
+func processNamespaces(cs kubernetes.Interface, label, tillerSA, profile string, deleteTiller, deleteTillerSA bool) error {
 
 	//Get namespaces that have a tiller in them
 	opts := metav1.ListOptions{LabelSelector: label}
@@ -99,7 +105,7 @@ func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTi
 		}
 		if len(releases) > 0 {
 			log.WithFields(log.Fields{
-				"namespace": namespace,
+				"tillerNamespace": namespace,
 				"releases":  releases,
 			}).Info("Helm2 releases detected")
 		} else {
@@ -110,7 +116,7 @@ func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTi
 	//If a namespace has no configMap backed releases and a tiller, remove tiller
 	for _, ns := range removalNamespaces {
 		nsLogger := log.WithFields(log.Fields{
-			"namespace": ns,
+			"tillerNamespace": ns,
 		})
 
 		if !deleteTiller {
@@ -131,19 +137,32 @@ func processNamespaces(cs kubernetes.Interface, label, tillerSA string, deleteTi
 		}
 		return errors.New(string(report))
 	}
+	if profile != "" {
+		f, err := os.Create(profile)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err = pprof.WriteHeapProfile(f); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func getTillerReleases(namespace string) ([]string, error) {
+	uniqueReleases := map[string]int{}
 	var releaseList []string
-	releases, err := utils.ListReleaseNamesInNamespace(utils.ListReleaseNamesInNamespaceOptions{TillerNamespace: namespace, Namespace: namespace})
+	releases, err := utils.ListReleases(utils.ListOptions{TillerNamespace: namespace})
 	if err != nil {
 		return []string{}, err
 	}
-	if releases != "" {
-		releaseList = strings.Split(releases, ",")
-	} else {
-		releaseList = []string{}
+	for _, release := range releases {
+		uniqueReleases[release.Name]++
+	}
+
+	for release := range uniqueReleases {
+		releaseList = append(releaseList, release)
 	}
 
 	return releaseList, nil
@@ -152,7 +171,7 @@ func getTillerReleases(namespace string) ([]string, error) {
 func removeTiller(namespace, label, tillerSA string, deleteTillerSA bool) error {
 
 	nsLogger := log.WithFields(log.Fields{
-		"namespace": namespace,
+		"tillerNamespace": namespace,
 	})
 
 	var errs []error
